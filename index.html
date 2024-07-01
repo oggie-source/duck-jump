@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duck Jump Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom right, lightblue, pink);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: black;
+            z-index: 100;
+        }
+        #highScoreDisplay {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 36px;
+            color: black;
+            z-index: 100;
+            text-align: center;
+            display: none; /* Initially hidden */
+        }
+        #restartButton {
+            position: absolute;
+            top: 70%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-family: 'Signore', sans-serif;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            display: none; /* Initially hidden */
+            cursor: pointer;
+            z-index: 2;
+        }
+        #coinCounterButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+            font-family: 'Signore', sans-serif;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 2;
+        }
+        #shopButton {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 18px;
+            font-family: 'Signore', sans-serif;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 2;
+        }
+        #shop {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 2;
+        }
+        .shop-item {
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+        .shop-item img {
+            width: 50px;
+            height: 50px;
+            margin-right: 10px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            transition: border-color 0.3s ease;
+        }
+        .shop-item.selected img {
+            border-color: yellow;
+        }
+    </style>
+</head>
+<body>
+<div id="score">Score: 0</div>
+<div id="highScoreDisplay"></div>
+<div id="restartButton" onclick="restartGame()">Restart</div>
+<div id="coinCounterButton" onclick="openCoinScreen()">Coins: 0</div>
+<canvas id="gameCanvas"></canvas>
+<button id="shopButton" onclick="toggleShop()">Shop</button>
+<div id="shop">
+    <div class="shop-item blue_duck" onclick="selectCharacter('blue_duck')">
+        <img src="blue_duck.png" alt="Blue Duck"> Blue Duck - Default
+    </div>
+    <div class="shop-item yellow_duck" onclick="buyCharacter('yellow_duck', 50)">
+        <img src="yellow_duck.png" alt="Yellow Duck" id="yellowDuckLabel"> Yellow Duck - 50 coins
+    </div>
+</div>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const context = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let duck = {
+        x: 50,
+        y: canvas.height - 120,
+        width: 50,
+        height: 70, // Taller duck
+        dy: 0,
+        gravity: 0.5,
+        lift: -15,
+        isDucking: false,
+        onGround: false
+    };
+
+    let selectedCharacter = localStorage.getItem('selectedCharacter') || 'blue_duck'; // Default character
+    let hasYellowDuck = localStorage.getItem('hasYellowDuck') === 'true'; // Check if yellow duck has been purchased
+    if (hasYellowDuck) {
+        document.getElementById('yellowDuckLabel').textContent = "Yellow Duck - Owned";
+    }
+    let obstacles = [];
+    let coins = [];
+    let clouds = [];
+    let frameCount = 0;
+    let speed = 2;
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem('highScore')) || 0;
+    let gameOver = false;
+    let coinCount = parseInt(localStorage.getItem('coinCount')) || 0;
+    document.getElementById('coinCounterButton').textContent = `Coins: ${coinCount}`;
+
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+            if (duck.onGround && !duck.isDucking) {
+                duck.dy = duck.lift;
+                duck.onGround = false;
+            }
+        } else if (e.code === 'ArrowDown') {
+            duck.isDucking = true;
+            duck.height = 50;
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowDown') {
+            duck.isDucking = false;
+            duck.height = 70;
+        }
+    });
+
+    function generateObstacles() {
+        const colors = ['red', 'green', 'blue', 'purple'];
+        let previousX = 0;
+        for (let i = 1; i <= 1000; i++) {
+            const isFloating = Math.random() < 0.5;
+            const height = isFloating ? 150 : 80;
+            const yPos = isFloating ? canvas.height - 210 : canvas.height - 80;
+            const distance = 200 + Math.random() * 300 + duck.width * 2; // Minimum distance of 2 times the width of the duck
+            previousX += distance;
+            obstacles.push({
+                x: previousX,
+                y: yPos,
+                width: 30,
+                height: height,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                isFloating: isFloating
+            });
+
+            // Generate coin near new obstacle
+            generateCoin(previousX, yPos, height, isFloating);
+        }
+    }
+
+    function generateClouds() {
+        for (let i = 0; i < 10; i++) {
+            clouds.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * (canvas.height / 2),
+                width: 100 + Math.random() * 100,
+                height: 50 + Math.random() * 30,
+                opacity: 0.5 + Math.random() * 0.5
+            });
+        }
+    }
+
+    function generateCoin(obstacleX, obstacleY, obstacleHeight, isFloating) {
+        let coinY;
+        if (isFloating) {
+            coinY = obstacleY + obstacleHeight + 100 + Math.random() * 30; // Place coin higher for floating obstacles
+        } else {
+            coinY = obstacleY - 100 - Math.random() * 20; // Raise coins below obstacles higher
+        }
+        coins.push({
+            x: obstacleX + 15, // Centered over obstacle
+            y: coinY,
+            width: 20,
+            height: 20
+        });
+    }
+
+    function drawBackground() {
+        // Draw hills
+        context.fillStyle = 'grey';
+        context.beginPath();
+        context.moveTo(0, canvas.height);
+        context.lineTo(0, canvas.height - 100);
+        context.lineTo(200, canvas.height - 300);
+        context.lineTo(400, canvas.height - 150);
+        context.lineTo(600, canvas.height - 350);
+        context.lineTo(800, canvas.height - 100);
+        context.lineTo(canvas.width, canvas.height);
+        context.closePath();
+        context.fill();
+
+        // Draw sun
+        context.fillStyle = 'yellow';
+        context.beginPath();
+        context.arc(canvas.width - 100, 100, 50, 0, Math.PI * 2);
+        context.fill();
+    }
+
+    function drawObstacles() {
+        obstacles.forEach(obstacle => {
+            context.fillStyle = obstacle.color;
+            context.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        });
+    }
+
+    function drawCoins() {
+        context.fillStyle = 'gold';
+        coins.forEach(coin => {
+            context.beginPath();
+            context.arc(coin.x + coin.width / 2, coin.y + coin.height / 2, coin.width / 2, 0, Math.PI * 2);
+            context.fill();
+        });
+    }
+
+    function drawClouds() {
+        clouds.forEach(cloud => {
+            context.fillStyle = `rgba(255, 255, 255, ${cloud.opacity})`;
+            context.fillRect(cloud.x, cloud.y, cloud.width, cloud.height);
+        });
+    }
+
+    function drawDuck() {
+        context.fillStyle = selectedCharacter === 'blue_duck' ? 'blue' : 'yellow';
+        context.fillRect(duck.x, duck.y, duck.width, duck.height);
+
+        if (selectedCharacter === 'yellow_duck') {
+            // Body
+            context.fillStyle = 'yellow';
+            context.fillRect(duck.x, duck.y, duck.width, duck.height);
+
+            // Eye
+            context.fillStyle = 'black';
+            context.beginPath();
+            context.arc(duck.x + duck.width - 15, duck.y + 20, 5, 0, Math.PI * 2);
+            context.fill();
+
+            // Beak
+            context.fillStyle = 'orange';
+            context.beginPath();
+            context.moveTo(duck.x + duck.width, duck.y + 30);
+            context.lineTo(duck.x + duck.width + 20, duck.y + 20);
+            context.lineTo(duck.x + duck.width, duck.y + 10);
+            context.fill();
+        }
+    }
+
+    function updateDuck() {
+        duck.dy += duck.gravity;
+        duck.y += duck.dy;
+        if (duck.y + duck.height >= canvas.height) {
+            duck.y = canvas.height - duck.height;
+            duck.dy = 0;
+            duck.onGround = true;
+        }
+    }
+
+    function updateObstacles() {
+        obstacles.forEach(obstacle => {
+            obstacle.x -= speed;
+        });
+        obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.width > 0);
+    }
+
+    function updateCoins() {
+        coins.forEach((coin, index) => {
+            coin.x -= speed;
+            if (isColliding(duck, coin)) {
+                coins.splice(index, 1);
+                coinCount++;
+                document.getElementById('coinCounterButton').textContent = `Coins: ${coinCount}`;
+                localStorage.setItem('coinCount', coinCount);
+            }
+        });
+    }
+
+    function updateClouds() {
+        clouds.forEach(cloud => {
+            cloud.x -= speed / 4; // Clouds move slower than obstacles
+        });
+        clouds = clouds.filter(cloud => cloud.x + cloud.width > 0);
+        while (clouds.length < 10) {
+            clouds.push({
+                x: canvas.width + Math.random() * 200,
+                y: Math.random() * (canvas.height / 2),
+                width: 100 + Math.random() * 100,
+                height: 50 + Math.random() * 30,
+                opacity: 0.5 + Math.random() * 0.5
+            });
+        }
+    }
+
+    function isColliding(rect1, rect2) {
+        return (
+            rect1.x < rect2.x + rect2.width &&
+            rect1.x + rect1.width > rect2.x &&
+            rect1.y < rect2.y + rect2.height &&
+            rect1.y + rect1.height > rect2.y
+        );
+    }
+
+    function updateScore() {
+        obstacles.forEach(obstacle => {
+            if (duck.x > obstacle.x + obstacle.width && !obstacle.passed) {
+                obstacle.passed = true;
+                score++;
+                document.getElementById('score').textContent = `Score: ${score}`;
+            }
+        });
+    }
+
+    function checkGameOver() {
+        obstacles.forEach(obstacle => {
+            if (isColliding(duck, obstacle)) {
+                gameOver = true;
+            }
+        });
+    }
+
+    function gameLoop() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        drawBackground();
+        drawClouds();
+        drawObstacles();
+        drawCoins();
+        drawDuck();
+        if (!gameOver) {
+            updateDuck();
+            updateObstacles();
+            updateCoins();
+            updateClouds();
+            updateScore();
+            checkGameOver();
+            speed += 0.001; // Increase speed over time
+        } else {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+            }
+            document.getElementById('highScoreDisplay').innerHTML = `High Score: ${highScore}<br>Score: ${score}`;
+            document.getElementById('highScoreDisplay').style.display = 'block';
+            document.getElementById('restartButton').style.display = 'block';
+            return;
+        }
+        requestAnimationFrame(gameLoop);
+    }
+
+    function restartGame() {
+        obstacles = [];
+        coins = [];
+        clouds = [];
+        frameCount = 0;
+        score = 0;
+        speed = 2; // Reset speed
+        gameOver = false;
+        duck.y = canvas.height - duck.height;
+        duck.dy = 0;
+        duck.onGround = false;
+        document.getElementById('highScoreDisplay').style.display = 'none';
+        document.getElementById('restartButton').style.display = 'none';
+        generateObstacles();
+        generateClouds();
+        gameLoop();
+    }
+
+    function toggleShop() {
+        const shop = document.getElementById('shop');
+        shop.style.display = shop.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function openCoinScreen() {
+        // Functionality to open the coin screen
+    }
+
+    function selectCharacter(character) {
+        selectedCharacter = character;
+        localStorage.setItem('selectedCharacter', selectedCharacter);
+        document.querySelectorAll('.shop-item').forEach(item => item.classList.remove('selected'));
+        document.querySelector(`.${selectedCharacter}`).classList.add('selected');
+    }
+
+    function buyCharacter(character, cost) {
+        if (coinCount >= cost) {
+            coinCount -= cost;
+            localStorage.setItem('coinCount', coinCount);
+            document.getElementById('coinCounterButton').textContent = `Coins: ${coinCount}`;
+            hasYellowDuck = true;
+            localStorage.setItem('hasYellowDuck', 'true');
+            document.getElementById('yellowDuckLabel').textContent = "Yellow Duck - Owned";
+            selectCharacter(character);
+        }
+    }
+
+    generateObstacles();
+    generateClouds();
+    gameLoop();
+</script>
+</body>
+</html>
